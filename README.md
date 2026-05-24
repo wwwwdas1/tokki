@@ -13,4 +13,5 @@ viewer.py 를 그대로 들고 chatGPT 로간다 > 파이썬 설치방법이랑 
 rmdir /S /Q "%LOCALAPPDATA%\NTKViewer\ntk_masker_ext"
 
 del /Q "%LOCALAPPDATA%\NTKViewer\cloudflare_passed.flag"
+
 cmd 에 복사 붙여넣기 하고 엔터 후 실행
