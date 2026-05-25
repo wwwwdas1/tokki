@@ -612,6 +612,189 @@ CONTENT_JS = r"""
 
   installDevtoolsPreflightShield();
 
+
+  function installAdBlockGuardShield() {
+    try {
+      if (window.__ntkAdBlockGuardShield) return;
+      window.__ntkAdBlockGuardShield = true;
+
+      const BLOCK_IDS = new Set(['ntk_blk_overlay', 'ntk_ad_allow_overlay']);
+
+      function styleTextOf(el) {
+        try { return el && el.getAttribute ? (el.getAttribute('style') || '') : ''; } catch (_) { return ''; }
+      }
+
+      function textOf(el) {
+        try { return el && (el.innerText || el.textContent || '') || ''; } catch (_) { return ''; }
+      }
+
+      function looksLikeBlockOverlay(node) {
+        try {
+          if (!node || node.nodeType !== 1) return false;
+
+          const id = node.id || '';
+          const style = styleTextOf(node);
+          const text = textOf(node);
+
+          if (BLOCK_IDS.has(id)) return true;
+          if (id.includes('ntk_blk')) return true;
+
+          if (text.includes('광고 차단 프로그램이 감지되었습니다')) return true;
+          if (text.includes('광고 차단 안내')) return true;
+          if (text.includes('광고 차단 확장 프로그램')) return true;
+          if (text.includes('도박광고')) return true;
+
+          if (
+            style.includes('position: fixed') &&
+            style.includes('inset: 0') &&
+            style.includes('2147483647') &&
+            (
+              style.includes('rgba(10, 10, 10') ||
+              style.includes('rgba(0, 0, 0') ||
+              style.includes('#0a0a0a')
+            ) &&
+            (
+              style.includes('100vw') ||
+              style.includes('100vh') ||
+              style.includes('display: flex')
+            )
+          ) return true;
+
+          return false;
+        } catch (_) {
+          return false;
+        }
+      }
+
+      function unhide(el) {
+        try {
+          if (!el || el.nodeType !== 1) return;
+
+          const s = el.style;
+
+          if (s.getPropertyValue('display') === 'none') s.removeProperty('display');
+          if (s.getPropertyValue('visibility') === 'hidden') s.removeProperty('visibility');
+          if (s.getPropertyValue('opacity') === '0') s.removeProperty('opacity');
+          if (s.getPropertyValue('pointer-events') === 'none') s.removeProperty('pointer-events');
+          if (s.getPropertyValue('user-select') === 'none') s.removeProperty('user-select');
+          if (s.getPropertyValue('-webkit-user-select') === 'none') s.removeProperty('-webkit-user-select');
+
+          if (el.getAttribute('aria-hidden') === 'true') el.removeAttribute('aria-hidden');
+          if ('inert' in el && el.inert) el.inert = false;
+        } catch (_) {}
+      }
+
+      function restoreAdBlockGuardSideEffects() {
+        try {
+          document.querySelectorAll('#ntk_blk_overlay, #ntk_ad_allow_overlay, [id*="ntk_blk"]').forEach(el => {
+            try { el.remove(); } catch (_) {}
+          });
+
+          document.querySelectorAll('body > div, body > section, body > aside').forEach(el => {
+            if (looksLikeBlockOverlay(el)) {
+              try { el.remove(); } catch (_) {}
+            }
+          });
+
+          if (document.body) {
+            Array.from(document.body.children || []).forEach(unhide);
+            document.body.style.setProperty('overflow', 'auto', 'important');
+            document.body.style.setProperty('pointer-events', 'auto', 'important');
+            document.body.style.removeProperty('background');
+            document.body.style.removeProperty('background-color');
+          }
+
+          document.documentElement.style.setProperty('overflow', 'auto', 'important');
+          document.documentElement.style.setProperty('pointer-events', 'auto', 'important');
+          document.documentElement.style.removeProperty('background');
+          document.documentElement.style.removeProperty('background-color');
+        } catch (_) {}
+      }
+
+      window.__ntkRestoreAdBlockGuard = restoreAdBlockGuardSideEffects;
+
+      const rawAppendChild = Node.prototype.appendChild;
+      const rawInsertBefore = Node.prototype.insertBefore;
+      const rawReplaceChild = Node.prototype.replaceChild;
+      const rawAppend = Element.prototype.append;
+      const rawPrepend = Element.prototype.prepend;
+      const rawSetAttribute = Element.prototype.setAttribute;
+
+      function swallow(node) {
+        if (looksLikeBlockOverlay(node)) {
+          restoreAdBlockGuardSideEffects();
+          try {
+            node.style.setProperty('display', 'none', 'important');
+            node.style.setProperty('visibility', 'hidden', 'important');
+            node.style.setProperty('opacity', '0', 'important');
+            node.style.setProperty('pointer-events', 'none', 'important');
+          } catch (_) {}
+          setTimeout(restoreAdBlockGuardSideEffects, 0);
+          setTimeout(restoreAdBlockGuardSideEffects, 50);
+          setTimeout(restoreAdBlockGuardSideEffects, 200);
+          return true;
+        }
+        return false;
+      }
+
+      if (!Node.prototype.__ntkBlockOverlayAppendPatched) {
+        Node.prototype.__ntkBlockOverlayAppendPatched = true;
+
+        Node.prototype.appendChild = function(node) {
+          if (swallow(node)) return node;
+          return rawAppendChild.call(this, node);
+        };
+
+        Node.prototype.insertBefore = function(node, ref) {
+          if (swallow(node)) return node;
+          return rawInsertBefore.call(this, node, ref);
+        };
+
+        Node.prototype.replaceChild = function(node, oldNode) {
+          if (swallow(node)) return oldNode;
+          return rawReplaceChild.call(this, node, oldNode);
+        };
+
+        Element.prototype.append = function(...nodes) {
+          const safe = nodes.filter(node => !swallow(node));
+          if (!safe.length) return;
+          return rawAppend.apply(this, safe);
+        };
+
+        Element.prototype.prepend = function(...nodes) {
+          const safe = nodes.filter(node => !swallow(node));
+          if (!safe.length) return;
+          return rawPrepend.apply(this, safe);
+        };
+
+        Element.prototype.setAttribute = function(name, value) {
+          const n = String(name || '').toLowerCase();
+          const v = String(value || '');
+          if (n === 'id' && BLOCK_IDS.has(v)) {
+            restoreAdBlockGuardSideEffects();
+            return rawSetAttribute.call(this, 'data-ntk-blocked-id', v);
+          }
+          return rawSetAttribute.call(this, name, value);
+        };
+      }
+
+      try {
+        const obs = new MutationObserver(() => restoreAdBlockGuardSideEffects());
+        obs.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['style', 'id', 'aria-hidden', 'inert']
+        });
+        window.__ntkAdBlockGuardObserver = obs;
+      } catch (_) {}
+
+      restoreAdBlockGuardSideEffects();
+    } catch (_) {}
+  }
+
+  installAdBlockGuardShield();
+
   function earlyCloudflareGuess() {
     const title = document.title || '';
     return (
@@ -934,18 +1117,23 @@ CONTENT_JS = r"""
         }
       }
     }
+
+    try { window.__ntkRestoreAdBlockGuard && window.__ntkRestoreAdBlockGuard(); } catch (_) {}
   }
 
   function applyAdRules() {
+    if (window.__ntkAdRulesAppliedStable) return;
+    window.__ntkAdRulesAppliedStable = true;
+
     let style = document.getElementById(AD_STYLE_ID);
 
     if (!style) {
       style = document.createElement('style');
       style.id = AD_STYLE_ID;
-      (document.documentElement || document.head || document.body).appendChild(style);
+      (document.head || document.documentElement || document.body).appendChild(style);
     }
 
-    style.textContent = `
+    const css = `
       [data-br="1"] {
         height: 1px !important;
         min-height: 1px !important;
@@ -966,9 +1154,13 @@ CONTENT_JS = r"""
         opacity: 1 !important;
       }
 
-      [data-br="1"] img[src*="/board_uploads/"] {
+      [data-br="1"] img[src*="/board_uploads/"],
+      [data-br="1"] img[src*="/api/ad/impression"],
+      img[src*="/api/ad/impression"] {
         width: 1px !important;
         height: 1px !important;
+        min-width: 1px !important;
+        min-height: 1px !important;
         display: block !important;
         visibility: visible !important;
         opacity: 1 !important;
@@ -1003,6 +1195,10 @@ CONTENT_JS = r"""
         pointer-events: auto !important;
       }
     `;
+
+    if (style.textContent !== css) {
+      style.textContent = css;
+    }
   }
 
   function removeOldMasks() {
@@ -1223,8 +1419,6 @@ CONTENT_JS = r"""
 
   function maskAds(force = false) {
     applyAdRules();
-    removeOldMasks();
-    lastMaskSignature = '';
   }
 
   function getAllRoots() {
@@ -2324,19 +2518,285 @@ CONTENT_JS = r"""
   window.__ntkDownloadNovelTxt = downloadNovelTxt;
   window.__ntkDownloadAllNovelTxt = downloadAllNovelTxt;
 
+
+  function installScrollKeeper() {
+    try {
+      if (window.__ntkScrollKeeperInstalled) return;
+      window.__ntkScrollKeeperInstalled = true;
+
+      try { window.__ntkScrollKeeper?.stop?.(); } catch (_) {}
+
+      const state = {
+        enabled: true,
+        lastY: Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0, document.body?.scrollTop || 0),
+        maxH: Math.max(document.documentElement.scrollHeight || 0, document.body?.scrollHeight || 0),
+        userUntil: 0,
+        href: location.href,
+        timer: null,
+        observer: null,
+        style: null
+      };
+
+      function yNow() {
+        return Math.max(
+          window.scrollY || 0,
+          document.documentElement.scrollTop || 0,
+          document.body?.scrollTop || 0
+        );
+      }
+
+      function hNow() {
+        return Math.max(
+          document.documentElement.scrollHeight || 0,
+          document.body?.scrollHeight || 0,
+          window.innerHeight || 0
+        );
+      }
+
+      function userNow() {
+        return Date.now() < state.userUntil;
+      }
+
+      function markUser(e) {
+        try {
+          if (e.type === 'wheel') {
+            state.userUntil = Date.now() + 700;
+            return;
+          }
+
+          if (e.type === 'keydown') {
+            const k = e.key || '';
+            if (['Home', 'PageUp', 'ArrowUp', 'ArrowDown', 'PageDown', 'End', ' '].includes(k)) {
+              state.userUntil = Date.now() + 900;
+            }
+            return;
+          }
+
+          state.userUntil = Date.now() + 700;
+        } catch (_) {}
+      }
+
+      function applyHeightFloor() {
+        try {
+          const h = state.maxH;
+
+          if (!state.style) {
+            state.style = document.createElement('style');
+            state.style.id = '__ntk_scroll_keeper_style__';
+            document.documentElement.appendChild(state.style);
+          }
+
+          state.style.textContent = `
+            html, body {
+              overflow-anchor: none !important;
+              min-height: ${h}px !important;
+            }
+          `;
+        } catch (_) {}
+      }
+
+      function resetOnUrlChange() {
+        if (location.href === state.href) return;
+
+        state.href = location.href;
+        state.lastY = 0;
+        state.maxH = hNow();
+        applyHeightFloor();
+      }
+
+      const rawScrollTo = window.scrollTo.bind(window);
+      const rawScroll = window.scroll.bind(window);
+
+      function wantsTop(args) {
+        try {
+          if (!args || !args.length) return false;
+
+          const a = args[0];
+
+          if (typeof a === 'object' && a) {
+            const top = Number(a.top ?? a.y ?? NaN);
+            return Number.isFinite(top) && top <= 5;
+          }
+
+          if (args.length >= 2) {
+            const y = Number(args[1]);
+            return Number.isFinite(y) && y <= 5;
+          }
+
+          return false;
+        } catch (_) {
+          return false;
+        }
+      }
+
+      window.scrollTo = function(...args) {
+        if (
+          state.enabled &&
+          wantsTop(args) &&
+          state.lastY > 120 &&
+          !userNow()
+        ) {
+          return;
+        }
+
+        return rawScrollTo(...args);
+      };
+
+      window.scroll = function(...args) {
+        if (
+          state.enabled &&
+          wantsTop(args) &&
+          state.lastY > 120 &&
+          !userNow()
+        ) {
+          return;
+        }
+
+        return rawScroll(...args);
+      };
+
+      try {
+        const rawIntoView = Element.prototype.scrollIntoView;
+        Element.prototype.scrollIntoView = function(...args) {
+          if (state.enabled && state.lastY > 120 && !userNow()) {
+            return;
+          }
+          return rawIntoView.apply(this, args);
+        };
+      } catch (_) {}
+
+      try {
+        const rawFocus = HTMLElement.prototype.focus;
+        HTMLElement.prototype.focus = function(...args) {
+          try {
+            if (state.enabled && state.lastY > 120 && !userNow()) {
+              if (!args.length || typeof args[0] !== 'object') {
+                return rawFocus.call(this, { preventScroll: true });
+              }
+              args[0].preventScroll = true;
+            }
+          } catch (_) {}
+
+          return rawFocus.apply(this, args);
+        };
+      } catch (_) {}
+
+      function tick() {
+        if (!state.enabled) return;
+
+        resetOnUrlChange();
+
+        const h = hNow();
+        if (h > state.maxH) {
+          state.maxH = h;
+          applyHeightFloor();
+        }
+
+        const y = yNow();
+
+        if (!userNow() && state.lastY > 120 && y < 20) {
+          rawScrollTo(0, state.lastY);
+          return;
+        }
+
+        if (y > 20) {
+          state.lastY = y;
+        }
+      }
+
+      ['wheel', 'touchmove', 'mousedown', 'keydown'].forEach(type => {
+        window.addEventListener(type, markUser, true);
+        document.addEventListener(type, markUser, true);
+      });
+
+      state.observer = new MutationObserver(() => {
+        const h = hNow();
+        if (h > state.maxH) {
+          state.maxH = h;
+          applyHeightFloor();
+        }
+      });
+
+      state.observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true
+      });
+
+      applyHeightFloor();
+
+      state.timer = setInterval(tick, 16);
+
+      window.__ntkScrollKeeper = {
+        stop() {
+          state.enabled = false;
+          try { clearInterval(state.timer); } catch (_) {}
+          try { state.observer.disconnect(); } catch (_) {}
+          try { state.style?.remove(); } catch (_) {}
+          console.log('scroll keeper stopped');
+        },
+        state
+      };
+
+      console.log('scroll keeper ON');
+    } catch (_) {}
+  }
+
+  function installScrollKeeperWhenReady() {
+    const ready = () => {
+      try {
+        if (!document.body) return false;
+        if (isCloudflarePage()) return false;
+        const textLen = (document.body.innerText || '').length;
+        if (document.readyState === 'loading') return false;
+        if (textLen < 40 && !document.querySelector('main, header, nav, .container')) return false;
+        return true;
+      } catch (_) {
+        return false;
+      }
+    };
+
+    const tryInstall = () => {
+      if (window.__ntkScrollKeeperInstalled) return;
+      if (ready()) installScrollKeeper();
+    };
+
+    [1800, 3200, 5200, 8000].forEach(ms => setTimeout(tryInstall, ms));
+    window.addEventListener('load', () => setTimeout(tryInstall, 1200), { once: true });
+  }
+
   function clean(force = false) {
     if (shouldDelayPageOps()) return;
     if (isCloudflarePage()) return;
 
     installAntiDebug();
-    showBadge();
     restoreMouseAndSelection();
     hideBadOverlays();
     maskAds(force);
     ensureToolbar();
   }
 
-  clean(true);
+  function bootOnce() {
+    if (shouldDelayPageOps()) return;
+    if (isCloudflarePage()) return;
+
+    installAntiDebug();
+    applyAdRules();
+    ensureToolbar();
+    restoreMouseAndSelection();
+    hideBadOverlays();
+  }
+
+  bootOnce();
+  installScrollKeeperWhenReady();
+
+  [500, 1400, 3200].forEach(ms => {
+    setTimeout(() => {
+      try {
+        applyAdRules();
+        ensureToolbar();
+      } catch (_) {}
+    }, ms);
+  });
 
   setTimeout(() => {
     resumeBulkNovelDownload();
@@ -2354,49 +2814,72 @@ CONTENT_JS = r"""
 
   function scheduleClean(force = false) {
     if (scheduled) return;
-
     scheduled = true;
 
     requestAnimationFrame(() => {
       scheduled = false;
-      clean(force);
+      try {
+        hideBadOverlays();
+        ensureToolbar();
+      } catch (_) {}
     });
   }
 
-  const observer = new MutationObserver(() => {
-    scheduleClean(false);
-  });
+  const observer = new MutationObserver(mutations => {
+    for (const m of mutations) {
+      const nodes = [
+        ...Array.from(m.addedNodes || []),
+        ...Array.from(m.removedNodes || [])
+      ];
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true
-  });
+      for (const n of nodes) {
+        if (!n || n.nodeType !== 1) continue;
 
-  window.addEventListener('resize', () => {
-    lastMaskSignature = '';
-    scheduleClean(true);
-  }, true);
+        const tag = String(n.tagName || '').toUpperCase();
+        const id = String(n.id || '');
+        const cls = String(n.className || '');
+        const text = String(n.textContent || '');
+        const style = String(n.getAttribute?.('style') || '');
 
-  document.addEventListener('load', e => {
-    if (e.target && e.target.tagName === 'IMG') {
-      lastMaskSignature = '';
-      scheduleClean(true);
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK' || tag === 'META') continue;
+        if (id.startsWith('__ntk_') || cls.includes('__ntk_')) continue;
+
+        if (
+          id === 'ntk_blk_overlay' ||
+          id === 'ntk_devtools_overlay' ||
+          text.includes('광고 차단 프로그램이 감지되었습니다') ||
+          text.includes('개발자 도구 차단') ||
+          (
+            style.includes('position: fixed') &&
+            (
+              style.includes('2147483647') ||
+              style.includes('999999') ||
+              style.includes('999998')
+            )
+          )
+        ) {
+          scheduleClean(false);
+          return;
+        }
+      }
     }
-  }, true);
+  });
 
-  const interval = setInterval(() => {
-    clean(false);
-  }, 700);
+  try {
+    observer.observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+  } catch (_) {}
 
   window.__ntkFullCleaner = {
     stop() {
-      observer.disconnect();
-      clearInterval(interval);
-      removeOldMasks();
+      try { observer.disconnect(); } catch (_) {}
       document.getElementById(TOOLBAR_ID)?.remove();
       document.getElementById(BADGE_ID)?.remove();
     }
   };
+
 })();
 """
 
@@ -2460,7 +2943,7 @@ DNR_RULES = [
 MANIFEST = {
     "manifest_version": 3,
     "name": "NTK Full Cleaner",
-    "version": "1.8",
+    "version": "1.8.3",
     "description": "Local page cleaner",
     "permissions": ["declarativeNetRequest"],
     "declarative_net_request": {
